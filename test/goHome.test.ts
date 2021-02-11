@@ -2,12 +2,20 @@ import { chromium, Page, Browser, BrowserContext, Cookie } from "playwright"
 import { createCookieIfDoesntExist } from "../src/common/util"
 import { hash } from "../src/node/util"
 
+async function setTimeoutPromise(milliseconds: number): Promise<void> {
+  return new Promise((resolve, _) => {
+    setTimeout(() => {
+      resolve()
+    }, milliseconds)
+  })
+}
+
 describe("login", () => {
   let browser: Browser
   let page: Page
   let context: BrowserContext
 
-  beforeAll(async (done) => {
+  beforeAll(async () => {
     browser = await chromium.launch()
     // Create a new context with the saved storage state
     const storageState = JSON.parse(process.env.STORAGE || "")
@@ -40,37 +48,23 @@ describe("login", () => {
       storageState: { cookies: maybeUpdatedCookies },
       recordVideo: { dir: "./test/videos/" },
     })
-    done()
   })
 
-  afterAll(async (done) => {
+  afterAll(async () => {
     // Remove password from local storage
     await context.clearCookies()
 
     await browser.close()
     await context.close()
-    done()
   })
 
-  beforeEach(async (done) => {
+  beforeEach(async () => {
     page = await context.newPage()
-    done()
   })
 
   // NOTE: this test will fail if you do not run code-server with --home $CODE_SERVER_ADDRESS/healthz
-  it("should see a 'Go Home' button in the Application Menu that goes to /healthz", async (done) => {
+  it("should see a 'Go Home' button in the Application Menu that goes to /healthz", async () => {
     let requestedGoHomeUrl = false
-    // Ideally, this test should pass and finish before the timeout set in the Jest config
-    // However, if it doesn't, we don't want a memory leak so we set this backup timeout
-    // Otherwise Jest may throw this error
-    // "Jest did not exit one second after the test run has completed.
-    // This usually means that there are asynchronous operations that weren't stopped in your tests.
-    // Consider running Jest with `--detectOpenHandles` to troubleshoot this issue."
-    const backupTimeout = setTimeout(() => {
-      // If it's not true by this point then the test should fail
-      expect(requestedGoHomeUrl).toBeTruthy()
-      done()
-    }, 20000)
 
     const GO_HOME_URL = `${process.env.CODE_SERVER_ADDRESS}/healthz`
     page.on("request", (request) => {
@@ -80,11 +74,6 @@ describe("login", () => {
       // only that it was made
       if (request.url() === GO_HOME_URL) {
         requestedGoHomeUrl = true
-        expect(requestedGoHomeUrl).toBeTruthy()
-        clearTimeout(backupTimeout)
-
-        // This ensures Jest knows we're done here.
-        done()
       }
     })
     // Sometimes a dialog shows up when you navigate
@@ -106,5 +95,8 @@ describe("login", () => {
     // NOTE: ran into issues of it failing intermittently
     // without having button: "middle"
     await page.click(goHomeButton, { button: "middle" })
+    // Give it 3 seconds for request to be sent and completed and for our value to update
+    await setTimeoutPromise(3000)
+    expect(requestedGoHomeUrl).toBe(true)
   })
 })
